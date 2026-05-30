@@ -20,7 +20,11 @@ export async function loadData() {
 export async function saveData(dados) {
   const { error } = await supabase
     .from('financeiro')
-    .update({ dados, atualizado_em: new Date().toISOString() })
+    .update({ 
+      dados: dados, 
+      atualizado_em: new Date().toISOString() 
+    })
     .eq('escola', ESCOLA)
   if (error) console.error('Erro ao salvar:', error)
+  else console.log('Salvo com sucesso:', JSON.stringify(dados).substring(0, 100))
 }
