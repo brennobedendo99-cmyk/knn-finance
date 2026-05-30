@@ -1,6 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
 
-// SUBSTITUA pelos seus valores do Supabase
 const SUPABASE_URL = 'https://ogjidfjecsmofhuxuqrv.supabase.co'
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9namlkZmplY3Ntb2ZodXh1cXJ2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAxMjgzNzUsImV4cCI6MjA5NTcwNDM3NX0.OhQUsQz5TwvIOfYAdavPdLm_MfVATFQGImE9InJBthc'
 
@@ -21,6 +20,7 @@ export async function loadData() {
 export async function saveData(dados) {
   const { error } = await supabase
     .from('financeiro')
-    .upsert({ escola: ESCOLA, dados, atualizado_em: new Date().toISOString() })
+    .update({ dados, atualizado_em: new Date().toISOString() })
+    .eq('escola', ESCOLA)
   if (error) console.error('Erro ao salvar:', error)
 }
