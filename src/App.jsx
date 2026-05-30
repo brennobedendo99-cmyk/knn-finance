@@ -163,7 +163,8 @@ function GuidedPayment({ data, setData }) {
     const tipoFinal = form.tipo === "Outros" ? form.outrosDesc : form.tipo;
     const t = { data: todayStr(), descricao: form.nome, categoria: tipoFinal, forma: form.forma, valor: form.valor, tipo: "Receita" };
     const mesAtual = MONTHS[new Date().getMonth()];
-    setData(d => ({ ...d, transacoes: [t, ...d.transacoes], mensal: d.mensal.map(m => m.mes === mesAtual ? { ...m, receita: m.receita + form.valor } : m) }));
+    const newData = { ...data, transacoes: [t, ...data.transacoes], mensal: data.mensal.map(m => m.mes === mesAtual ? { ...m, receita: m.receita + form.valor } : m) };
+    setData(newData);
     go("done", `🎉 **Lançado!**\n\n💰 ${fmt(form.valor)} de **${form.nome}**\n📋 ${tipoFinal} — ${form.forma}\n📅 ${todayStr()}`);
   }
   function reset() { setForm({ tipo: "", outrosDesc: "", forma: "", nome: "", valor: 0 }); setInp(""); setMsgs([{ from: "bot", text: "Deseja lançar um novo **pagamento**?" }]); setStep("inicio"); }
@@ -318,7 +319,8 @@ function GuidedExpense({ data, setData }) {
     const tipoFinal = form.tipo === "Outros" ? form.outrosDesc : form.tipo;
     const t = { data: todayStr(), descricao: form.desc, categoria: tipoFinal, forma: form.forma, valor: form.valor, tipo: "Despesa" };
     const mesAtual = MONTHS[new Date().getMonth()];
-    setData(d => ({ ...d, transacoes: [t, ...d.transacoes], mensal: d.mensal.map(m => m.mes === mesAtual ? { ...m, despesas: m.despesas + form.valor } : m) }));
+    const newData = { ...data, transacoes: [t, ...data.transacoes], mensal: data.mensal.map(m => m.mes === mesAtual ? { ...m, despesas: m.despesas + form.valor } : m) };
+    setData(newData);
     go("done", `🎉 **Gasto lançado!**\n\n📤 ${fmt(form.valor)} — **${form.desc}**\n📋 ${tipoFinal} — ${form.forma}\n📅 ${todayStr()}`);
   }
   function reset() { setForm({ tipo: "", outrosDesc: "", forma: "", desc: "", valor: 0 }); setInp(""); setMsgs([{ from: "bot", text: "Deseja lançar um novo **gasto**?" }]); setStep("inicio"); }
@@ -1181,7 +1183,10 @@ export default function App() {
   const [ready, setReady] = useState(false);
   const syncRef = useRef(null);
 
-  function setData(d) { setDataState(d); saveData(d); }
+  function setData(d) { 
+    setDataState(d); 
+    saveData(d);
+  }
 
   useEffect(() => {
     loadData().then(saved => {
