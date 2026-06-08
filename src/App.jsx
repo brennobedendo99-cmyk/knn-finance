@@ -713,45 +713,31 @@ function ContasFixasTab({ data, setData }) {
   }
 
   function marcarPago(id) {
-    // Find the conta
     const conta = contas.find(c => c.id === id);
     if (!conta) return;
-
     const pagamentos = { ...(conta.pagamentos || {}) };
     const jaPago = !!pagamentos[mesKey];
+    const dataStr = `${String(isHoje ? todayDay : 1).padStart(2,"0")}/${String(mesIdx+1).padStart(2,"0")}/${ano}`;
+    
+    let novasContas;
+    let novaTransacoes = data.transacoes;
+    let novoMensal = data.mensal;
 
     if (jaPago) {
-      // Desfazer: remove só o registro deste mês
       delete pagamentos[mesKey];
-      const novasContas = contas.map(c => c.id === id ? { ...c, pagamentos } : c);
-      setData({ ...data, contasfixas: novasContas });
+      novasContas = contas.map(c => c.id === id ? { ...c, pagamentos: { ...pagamentos } } : c);
     } else {
-      // Marcar pago: salva registro neste mês + lança despesa nas transações
-      const dataStr = `${String(todayDay || 1).padStart(2,"0")}/${String(mesIdx+1).padStart(2,"0")}/${ano}`;
       pagamentos[mesKey] = { data: dataStr, valor: conta.valor };
-      const novasContas = contas.map(c => c.id === id ? { ...c, pagamentos } : c);
-      const novaTransacao = {
-        data: dataStr,
-        descricao: conta.nome,
-        categoria: conta.categoria,
-        forma: "Conta Fixa",
-        valor: conta.valor,
-        tipo: "Despesa",
-      };
-      const novoMensal = data.mensal.map(m =>
-        m.mes === MONTHS[mesIdx] ? { ...m, despesas: m.despesas + conta.valor } : m
-      );
-      setData({
-        ...data,
-        contasfixas: novasContas,
-        transacoes: [novaTransacao, ...data.transacoes],
-        mensal: novoMensal,
-      });
+      novasContas = contas.map(c => c.id === id ? { ...c, pagamentos: { ...pagamentos } } : c);
+      const t = { data: dataStr, descricao: conta.nome, categoria: conta.categoria, forma: "Conta Fixa", valor: conta.valor, tipo: "Despesa" };
+      novaTransacoes = [t, ...data.transacoes];
+      novoMensal = data.mensal.map(m => m.mes === MONTHS[mesIdx] ? { ...m, despesas: m.despesas + conta.valor } : m);
     }
+
+    setData({ ...data, contasfixas: novasContas, transacoes: novaTransacoes, mensal: novoMensal });
   }
 
   function removerConta(id) {
-    if (!window.confirm("Remover esta conta fixa?")) return;
     setData({ ...data, contasfixas: contas.filter(c => c.id !== id) });
   }
 
