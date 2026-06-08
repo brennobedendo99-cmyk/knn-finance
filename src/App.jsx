@@ -672,13 +672,35 @@ function TransacoesTab({ transacoes, data, mes, editTransacao }) {
 }
 
 // ── Contas Fixas Tab ──────────────────────────────────────────────────────────
-function ContasFixasTab({ data, setData }) {
+function ContasFixasTab({ data, setData, mesFiltroAdmin }) {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ nome: "", valor: "", dia: "", categoria: "Contas Fixas" });
+  const [mesSel, setMesSel] = useState(() => {
+    const t = new Date();
+    return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}`;
+  });
+
   const today = new Date();
   const todayDay = today.getDate();
   const todayMonth = today.getMonth();
   const todayYear = today.getFullYear();
+  const todayMesKey = `${todayYear}-${String(todayMonth + 1).padStart(2, "0")}`;
+
+  // Parse selected month
+  const [selYear, selMonthIdx] = mesSel.split("-").map(Number);
+  const selMonth = selMonthIdx - 1;
+  const isCurrentMonth = mesSel === todayMesKey;
+  const selLastDay = new Date(selYear, selMonthIdx, 0).getDate();
+
+  // Month navigation
+  function prevMes() {
+    const d = new Date(selYear, selMonth - 1, 1);
+    setMesSel(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+  }
+  function nextMes() {
+    const d = new Date(selYear, selMonth + 1, 1);
+    setMesSel(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+  }
 
   const contas = data.contasfixas || [];
 
@@ -692,37 +714,42 @@ function ContasFixasTab({ data, setData }) {
       categoria: form.categoria,
       pagamentos: {},
     };
-    const newData = { ...data, contasfixas: [...contas, nova] };
-    setData(newData);
+    setData({ ...data, contasfixas: [...contas, nova] });
     setForm({ nome: "", valor: "", dia: "", categoria: "Contas Fixas" });
     setShowForm(false);
   }
 
   function togglePago(id) {
-    const mesKey = `${todayYear}-${String(todayMonth + 1).padStart(2, "0")}`;
-    const newContas = contas.map(c => {
-      if (c.id !== id) return c;
-      const pagamentos = { ...c.pagamentos };
-      if (pagamentos[mesKey]) {
-        delete pagamentos[mesKey];
-      } else {
-        pagamentos[mesKey] = { data: todayStr(), valor: c.valor };
-        // Also add to transactions
-        const t = { data: todayStr(), descricao: c.nome, categoria: c.categoria, forma: "—", valor: c.valor, tipo: "Despesa" };
-        const mesAtual = MONTHS[todayMonth];
-        const newData2 = {
-          ...data,
-          contasfixas: data.contasfixas.map(cc => cc.id === id ? { ...cc, pagamentos } : cc),
-          transacoes: [t, ...data.transacoes],
-          mensal: data.mensal.map(m => m.mes === mesAtual ? { ...m, despesas: m.despesas + c.valor } : m),
-        };
-        setData(newData2);
-        return null;
-      }
-      return { ...c, pagamentos };
-    }).filter(Boolean);
-    if (newContas.every(c => c !== null)) {
+    const conta = contas.find(c => c.id === id);
+    if (!conta) return;
+    const pagamentos = { ...(conta.pagamentos || {}) };
+    const jaEstavaPago = !!pagamentos[mesSel];
+
+    if (jaEstavaPago) {
+      // Desfazer pagamento — remove pagamentos entry, remove transacao correspondente
+      delete pagamentos[mesSel];
+      const newContas = contas.map(c => c.id === id ? { ...c, pagamentos } : c);
       setData({ ...data, contasfixas: newContas });
+    } else {
+      // Marcar como pago — adiciona pagamentos entry e lança despesa
+      pagamentos[mesSel] = { data: todayStr(), valor: conta.valor };
+      const t = {
+        data: todayStr(),
+        descricao: conta.nome,
+        categoria: conta.categoria,
+        forma: "Conta Fixa",
+        valor: conta.valor,
+        tipo: "Despesa",
+      };
+      const mesAtual = MONTHS[selMonth];
+      const newContas = contas.map(c => c.id === id ? { ...c, pagamentos } : c);
+      const newData = {
+        ...data,
+        contasfixas: newContas,
+        transacoes: [t, ...data.transacoes],
+        mensal: data.mensal.map(m => m.mes === mesAtual ? { ...m, despesas: m.despesas + conta.valor } : m),
+      };
+      setData(newData);
     }
   }
 
@@ -730,17 +757,14 @@ function ContasFixasTab({ data, setData }) {
     setData({ ...data, contasfixas: contas.filter(c => c.id !== id) });
   }
 
-  const mesKey = `${todayYear}-${String(todayMonth + 1).padStart(2, "0")}`;
-
-  // Sort by dia vencimento
+  // Status for selected month
   const contasOrdenadas = [...contas].sort((a, b) => a.dia - b.dia);
-
-  // Check which are vencidas/vencendo hoje
   const contasComStatus = contasOrdenadas.map(c => {
-    const pago = !!c.pagamentos?.[mesKey];
-    const venceu = !pago && c.dia <= todayDay;
-    const venceHoje = !pago && c.dia === todayDay;
-    const venceEmBreve = !pago && c.dia > todayDay && c.dia - todayDay <= 3;
+    const pago = !!c.pagamentos?.[mesSel];
+    const refDay = isCurrentMonth ? todayDay : selLastDay;
+    const venceu = !pago && c.dia <= refDay;
+    const venceHoje = !pago && isCurrentMonth && c.dia === todayDay;
+    const venceEmBreve = !pago && isCurrentMonth && c.dia > todayDay && c.dia - todayDay <= 3;
     return { ...c, pago, venceu, venceHoje, venceEmBreve };
   });
 
