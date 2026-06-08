@@ -626,6 +626,51 @@ function ColaboradorView({ data, setData, onBack }) {
 }
 
 
+
+// ── Transacoes Tab ────────────────────────────────────────────────────────────
+function TransacoesTab({ transacoes, data, mes, editTransacao }) {
+  const [tipoFilt, setTipoFilt] = useState("Todos");
+  const listaFilt = tipoFilt === "Todos" ? transacoes : transacoes.filter(t => t.tipo === tipoFilt);
+
+  return (
+    <div style={{ background: BG2, border: `1px solid ${BORDER}`, borderRadius: 16, padding: 24 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
+        <h3 style={{ margin: 0, fontSize: 16, color: TXT }}>Transações <span style={{ color: TXT3, fontSize: 13, fontWeight: 400 }}>({listaFilt.length})</span></h3>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {["Todos","Receita","Despesa"].map(tipo => (
+            <button key={tipo} onClick={() => setTipoFilt(tipo)} style={{ background: tipoFilt === tipo ? GRAD : BG3, color: tipoFilt === tipo ? "#fff" : TXT2, border: `1px solid ${tipoFilt === tipo ? "transparent" : BORDER}`, borderRadius: 8, padding: "5px 14px", cursor: "pointer", fontSize: 12, fontFamily: "monospace", fontWeight: tipoFilt === tipo ? 700 : 400 }}>{tipo}</button>
+          ))}
+          <span style={{ color: TXT3, fontSize: 12 }}>| ✏️ editar</span>
+        </div>
+      </div>
+      {listaFilt.length > 0 ? (
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead><tr>{["Data","Descrição","Categoria","Tipo","Valor",""].map(h => <th key={h} style={{ textAlign: "left", padding: "9px 14px", color: TXT2, fontSize: 11, fontFamily: "monospace", textTransform: "uppercase", borderBottom: `1px solid ${BORDER}`, fontWeight: 400 }}>{h}</th>)}</tr></thead>
+            <tbody>
+              {listaFilt.map((t, i) => {
+                const ri = data.transacoes.indexOf(t);
+                return (
+                  <tr key={i} style={{ borderBottom: `1px solid ${BORDER}44` }}>
+                    <td style={{ padding: "11px 14px", color: TXT2, fontSize: 12, fontFamily: "monospace" }}>{t.data}</td>
+                    <td style={{ padding: "11px 14px", color: TXT, fontSize: 13 }}>{t.descricao}</td>
+                    <td style={{ padding: "11px 14px" }}><span style={{ background: BG3, borderRadius: 6, padding: "2px 8px", fontSize: 11, color: TXT2 }}>{t.categoria}</span></td>
+                    <td style={{ padding: "11px 14px" }}><span style={{ color: t.tipo === "Receita" ? SEC : PRI, fontSize: 13, fontWeight: 600 }}>{t.tipo}</span></td>
+                    <td style={{ padding: "11px 14px", color: t.tipo === "Receita" ? SEC : PRI, fontFamily: "monospace", fontSize: 13, fontWeight: 700 }}>{t.tipo === "Receita" ? "+" : "-"}{fmt(t.valor)}</td>
+                    <td style={{ padding: "11px 14px" }}>
+                      <button onClick={() => editTransacao(ri >= 0 ? ri : i)} style={{ background: BG3, border: `1px solid ${BORDER}`, borderRadius: 7, color: TXT2, cursor: "pointer", padding: "4px 10px", fontSize: 12 }}>✏️</button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : <div style={{ padding: "48px 0", textAlign: "center", color: TXT3 }}>Nenhuma transação{mes !== "todos" ? ` em ${mes}` : " ainda"}.</div>}
+    </div>
+  );
+}
+
 // ── Contas Fixas Tab ──────────────────────────────────────────────────────────
 function ContasFixasTab({ data, setData }) {
   const [showForm, setShowForm] = useState(false);
@@ -980,47 +1025,7 @@ function AdminDashboard({ data, setData, onBack }) {
 
         {tab === "categorias" && <CategoriasTab transacoes={transacoesFilt} mesFiltro={mes} data={data} openEditTransacao={editTransacao} />}
 
-        {tab === "transacoes" && (() => {
-          const [tipoFilt, setTipoFilt] = React.useState("Todos");
-          const listaFilt = tipoFilt === "Todos" ? transacoesFilt : transacoesFilt.filter(t => t.tipo === tipoFilt);
-          return (
-          <div style={{ background: BG2, border: `1px solid ${BORDER}`, borderRadius: 16, padding: 24 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
-              <h3 style={{ margin: 0, fontSize: 16, color: TXT }}>Transações <span style={{ color: TXT3, fontSize: 13, fontWeight: 400 }}>({listaFilt.length})</span></h3>
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                {["Todos","Receita","Despesa"].map(tipo => (
-                  <button key={tipo} onClick={() => setTipoFilt(tipo)} style={{ background: tipoFilt === tipo ? GRAD : BG3, color: tipoFilt === tipo ? "#fff" : TXT2, border: `1px solid ${tipoFilt === tipo ? "transparent" : BORDER}`, borderRadius: 8, padding: "5px 14px", cursor: "pointer", fontSize: 12, fontFamily: "monospace", fontWeight: tipoFilt === tipo ? 700 : 400 }}>{tipo}</button>
-                ))}
-                <span style={{ color: TXT3, fontSize: 12 }}>| ✏️ editar</span>
-              </div>
-            </div>
-            {listaFilt.length > 0 ? (
-              <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                  <thead><tr>{["Data","Descrição","Categoria","Tipo","Valor",""].map(h => <th key={h} style={{ textAlign: "left", padding: "9px 14px", color: TXT2, fontSize: 11, fontFamily: "monospace", textTransform: "uppercase", borderBottom: `1px solid ${BORDER}`, fontWeight: 400 }}>{h}</th>)}</tr></thead>
-                  <tbody>
-                    {listaFilt.map((t, i) => {
-                      const ri = data.transacoes.indexOf(t);
-                      return (
-                        <tr key={i} style={{ borderBottom: `1px solid ${BORDER}44` }}>
-                          <td style={{ padding: "11px 14px", color: TXT2, fontSize: 12, fontFamily: "monospace" }}>{t.data}</td>
-                          <td style={{ padding: "11px 14px", color: TXT, fontSize: 13 }}>{t.descricao}</td>
-                          <td style={{ padding: "11px 14px" }}><span style={{ background: BG3, borderRadius: 6, padding: "2px 8px", fontSize: 11, color: TXT2 }}>{t.categoria}</span></td>
-                          <td style={{ padding: "11px 14px" }}><span style={{ color: t.tipo === "Receita" ? SEC : PRI, fontSize: 13, fontWeight: 600 }}>{t.tipo}</span></td>
-                          <td style={{ padding: "11px 14px", color: t.tipo === "Receita" ? SEC : PRI, fontFamily: "monospace", fontSize: 13, fontWeight: 700 }}>{t.tipo === "Receita" ? "+" : "-"}{fmt(t.valor)}</td>
-                          <td style={{ padding: "11px 14px" }}>
-                            <button onClick={() => editTransacao(ri >= 0 ? ri : i)} style={{ background: BG3, border: `1px solid ${BORDER}`, borderRadius: 7, color: TXT2, cursor: "pointer", padding: "4px 10px", fontSize: 12 }}>✏️</button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            ) : <div style={{ padding: "48px 0", textAlign: "center", color: TXT3 }}>Nenhuma transação{mes !== "todos" ? ` em ${mes}` : " ainda"}.</div>}
-          </div>
-          );
-        })()}
+        {tab === "transacoes" && <TransacoesTab transacoes={transacoesFilt} data={data} mes={mes} editTransacao={editTransacao} />}
 
         {tab === "pagamentos" && (() => {
           const pags = filterByMonth(data.transacoes.filter(t => t.tipo === "Receita"), mes);
