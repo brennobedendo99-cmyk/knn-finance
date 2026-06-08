@@ -23,7 +23,8 @@ const TXT3 = "#4A2D6B";
 
 const fmt = (v, type = "currency") => {
   if (v == null || isNaN(v)) return "—";
-  if (type === "currency") return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", notation: "compact", maximumFractionDigits: 1 }).format(v);
+  if (type === "currency") return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
+  if (type === "compact") return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", notation: "compact", maximumFractionDigits: 1 }).format(v);
   if (type === "pct") return `${(v * 100).toFixed(1)}%`;
   if (type === "num") return new Intl.NumberFormat("pt-BR", { notation: "compact" }).format(v);
   return v;
@@ -34,6 +35,7 @@ const todayStr = () => new Date().toLocaleDateString("pt-BR");
 const EMPTY = {
   mensal: MONTHS.map(mes => ({ mes, receita: 0, despesas: 0 })),
   transacoes: [],
+  contasfixas: [],
 };
 
 function calcSummary(mensal) {
@@ -454,7 +456,7 @@ function CategoriasTab({ transacoes, mesFiltro, data, openEditTransacao }) {
               <Pie data={porCat} cx="50%" cy="50%" innerRadius={50} outerRadius={85} dataKey="valor" nameKey="nome">
                 {porCat.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
               </Pie>
-              <Tooltip formatter={v => fmt(v)} contentStyle={{ background: BG2, border: `1px solid ${BORDER}`, borderRadius: 8 }} />
+              <Tooltip formatter={v => fmt(v,"compact")} contentStyle={{ background: BG2, border: `1px solid ${BORDER}`, borderRadius: 8 }} />
             </PieChart>
           </ResponsiveContainer>
           <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
@@ -623,6 +625,220 @@ function ColaboradorView({ data, setData, onBack }) {
   );
 }
 
+
+// ── Contas Fixas Tab ──────────────────────────────────────────────────────────
+function ContasFixasTab({ data, setData }) {
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ nome: "", valor: "", dia: "", categoria: "Contas Fixas" });
+  const today = new Date();
+  const todayDay = today.getDate();
+  const todayMonth = today.getMonth();
+  const todayYear = today.getFullYear();
+
+  const contas = data.contasfixas || [];
+
+  function addConta() {
+    if (!form.nome || !form.valor || !form.dia) return;
+    const nova = {
+      id: Date.now(),
+      nome: form.nome,
+      valor: parseFloat(form.valor.replace(",", ".")),
+      dia: parseInt(form.dia),
+      categoria: form.categoria,
+      pagamentos: {},
+    };
+    const newData = { ...data, contasfixas: [...contas, nova] };
+    setData(newData);
+    setForm({ nome: "", valor: "", dia: "", categoria: "Contas Fixas" });
+    setShowForm(false);
+  }
+
+  function togglePago(id) {
+    const mesKey = `${todayYear}-${String(todayMonth + 1).padStart(2, "0")}`;
+    const newContas = contas.map(c => {
+      if (c.id !== id) return c;
+      const pagamentos = { ...c.pagamentos };
+      if (pagamentos[mesKey]) {
+        delete pagamentos[mesKey];
+      } else {
+        pagamentos[mesKey] = { data: todayStr(), valor: c.valor };
+        // Also add to transactions
+        const t = { data: todayStr(), descricao: c.nome, categoria: c.categoria, forma: "—", valor: c.valor, tipo: "Despesa" };
+        const mesAtual = MONTHS[todayMonth];
+        const newData2 = {
+          ...data,
+          contasfixas: data.contasfixas.map(cc => cc.id === id ? { ...cc, pagamentos } : cc),
+          transacoes: [t, ...data.transacoes],
+          mensal: data.mensal.map(m => m.mes === mesAtual ? { ...m, despesas: m.despesas + c.valor } : m),
+        };
+        setData(newData2);
+        return null;
+      }
+      return { ...c, pagamentos };
+    }).filter(Boolean);
+    if (newContas.every(c => c !== null)) {
+      setData({ ...data, contasfixas: newContas });
+    }
+  }
+
+  function removeConta(id) {
+    setData({ ...data, contasfixas: contas.filter(c => c.id !== id) });
+  }
+
+  const mesKey = `${todayYear}-${String(todayMonth + 1).padStart(2, "0")}`;
+
+  // Sort by dia vencimento
+  const contasOrdenadas = [...contas].sort((a, b) => a.dia - b.dia);
+
+  // Check which are vencidas/vencendo hoje
+  const contasComStatus = contasOrdenadas.map(c => {
+    const pago = !!c.pagamentos?.[mesKey];
+    const venceu = !pago && c.dia <= todayDay;
+    const venceHoje = !pago && c.dia === todayDay;
+    const venceEmBreve = !pago && c.dia > todayDay && c.dia - todayDay <= 3;
+    return { ...c, pago, venceu, venceHoje, venceEmBreve };
+  });
+
+  const totalMes = contas.reduce((s, c) => s + c.valor, 0);
+  const totalPago = contasComStatus.filter(c => c.pago).reduce((s, c) => s + c.valor, 0);
+  const totalPendente = totalMes - totalPago;
+  const vencidas = contasComStatus.filter(c => c.venceu && !c.venceHoje);
+  const hoje = contasComStatus.filter(c => c.venceHoje);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+
+      {/* Alertas */}
+      {(vencidas.length > 0 || hoje.length > 0) && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {hoje.length > 0 && (
+            <div style={{ background: "#ffd16618", border: "1px solid #ffd16666", borderRadius: 12, padding: "12px 18px", display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 20 }}>⚠️</span>
+              <span style={{ color: "#ffd166", fontSize: 14, fontWeight: 600 }}>
+                {hoje.length} conta{hoje.length > 1 ? "s vencem" : " vence"} HOJE: {hoje.map(c => c.nome).join(", ")}
+              </span>
+            </div>
+          )}
+          {vencidas.length > 0 && (
+            <div style={{ background: `${PRI}18`, border: `1px solid ${PRI}66`, borderRadius: 12, padding: "12px 18px", display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 20 }}>🚨</span>
+              <span style={{ color: PRI, fontSize: 14, fontWeight: 600 }}>
+                {vencidas.length} conta{vencidas.length > 1 ? "s vencidas" : " vencida"}: {vencidas.map(c => c.nome).join(", ")}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* KPIs */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 16 }}>
+        <div style={{ background: BG2, border: `1px solid ${BORDER}`, borderRadius: 16, padding: "20px 24px" }}>
+          <span style={{ color: TXT2, fontSize: 11, fontFamily: "monospace", textTransform: "uppercase", letterSpacing: 1 }}>Total Mensal</span>
+          <div style={{ color: TXT, fontSize: 24, fontWeight: 700, marginTop: 8 }}>{fmt(totalMes)}</div>
+          <div style={{ color: TXT2, fontSize: 12, marginTop: 4 }}>{contas.length} contas cadastradas</div>
+        </div>
+        <div style={{ background: `${SEC}12`, border: `1px solid ${SEC}33`, borderRadius: 16, padding: "20px 24px" }}>
+          <span style={{ color: TXT2, fontSize: 11, fontFamily: "monospace", textTransform: "uppercase", letterSpacing: 1 }}>Pago este mês</span>
+          <div style={{ color: SEC, fontSize: 24, fontWeight: 700, marginTop: 8 }}>{fmt(totalPago)}</div>
+          <div style={{ color: TXT2, fontSize: 12, marginTop: 4 }}>{contasComStatus.filter(c => c.pago).length} de {contas.length} pagas</div>
+        </div>
+        <div style={{ background: `${PRI}12`, border: `1px solid ${PRI}33`, borderRadius: 16, padding: "20px 24px" }}>
+          <span style={{ color: TXT2, fontSize: 11, fontFamily: "monospace", textTransform: "uppercase", letterSpacing: 1 }}>Pendente</span>
+          <div style={{ color: PRI, fontSize: 24, fontWeight: 700, marginTop: 8 }}>{fmt(totalPendente)}</div>
+          <div style={{ color: TXT2, fontSize: 12, marginTop: 4 }}>{contasComStatus.filter(c => !c.pago).length} contas pendentes</div>
+        </div>
+      </div>
+
+      {/* Lista de contas */}
+      <div style={{ background: BG2, border: `1px solid ${BORDER}`, borderRadius: 16, padding: 24 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+          <h3 style={{ margin: 0, fontSize: 16, color: TXT }}>📅 Calendário de Vencimentos — {MONTHS[todayMonth]}/{todayYear}</h3>
+          <button onClick={() => setShowForm(f => !f)} style={{ background: GRAD, color: "#fff", border: "none", borderRadius: 10, padding: "8px 18px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+            {showForm ? "✕ Fechar" : "+ Nova Conta"}
+          </button>
+        </div>
+
+        {/* Form nova conta */}
+        {showForm && (
+          <div style={{ background: BG3, border: `1px solid ${BORDER}`, borderRadius: 12, padding: 18, marginBottom: 18, display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr auto", gap: 10, alignItems: "end" }}>
+            <div>
+              <label style={{ color: TXT2, fontSize: 11, fontFamily: "monospace", display: "block", marginBottom: 5 }}>NOME DA CONTA</label>
+              <input value={form.nome} onChange={e => setForm(f => ({ ...f, nome: e.target.value }))} placeholder="Ex: Aluguel, Luz, Internet..." style={{ width: "100%", background: BG, border: `1px solid ${BORDER}`, borderRadius: 8, padding: "8px 12px", color: TXT, fontSize: 13, outline: "none", boxSizing: "border-box" }} />
+            </div>
+            <div>
+              <label style={{ color: TXT2, fontSize: 11, fontFamily: "monospace", display: "block", marginBottom: 5 }}>VALOR (R$)</label>
+              <input value={form.valor} onChange={e => setForm(f => ({ ...f, valor: e.target.value }))} placeholder="0,00" style={{ width: "100%", background: BG, border: `1px solid ${BORDER}`, borderRadius: 8, padding: "8px 12px", color: TXT, fontSize: 13, outline: "none", boxSizing: "border-box" }} />
+            </div>
+            <div>
+              <label style={{ color: TXT2, fontSize: 11, fontFamily: "monospace", display: "block", marginBottom: 5 }}>DIA VENC.</label>
+              <input type="number" min="1" max="31" value={form.dia} onChange={e => setForm(f => ({ ...f, dia: e.target.value }))} placeholder="Ex: 10" style={{ width: "100%", background: BG, border: `1px solid ${BORDER}`, borderRadius: 8, padding: "8px 12px", color: TXT, fontSize: 13, outline: "none", boxSizing: "border-box" }} />
+            </div>
+            <div>
+              <label style={{ color: TXT2, fontSize: 11, fontFamily: "monospace", display: "block", marginBottom: 5 }}>CATEGORIA</label>
+              <select value={form.categoria} onChange={e => setForm(f => ({ ...f, categoria: e.target.value }))} style={{ width: "100%", background: BG, border: `1px solid ${BORDER}`, borderRadius: 8, padding: "8px 12px", color: TXT, fontSize: 13, outline: "none" }}>
+                {TIPOS_GASTO.map(t => <option key={t}>{t}</option>)}
+              </select>
+            </div>
+            <button onClick={addConta} style={{ background: GRAD, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>✓ Adicionar</button>
+          </div>
+        )}
+
+        {contasComStatus.length === 0 ? (
+          <div style={{ padding: "40px 0", textAlign: "center", color: TXT3 }}>
+            Nenhuma conta cadastrada. Clique em <strong style={{ color: PRI }}>+ Nova Conta</strong> para começar.
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {contasComStatus.map(c => {
+              let borderColor = BORDER;
+              let bgColor = BG3;
+              if (c.pago) { borderColor = `${SEC}44`; bgColor = `${SEC}0a`; }
+              else if (c.venceHoje) { borderColor = "#ffd16666"; bgColor = "#ffd16608"; }
+              else if (c.venceu) { borderColor = `${PRI}66`; bgColor = `${PRI}08`; }
+              else if (c.venceEmBreve) { borderColor = "#ffd16633"; bgColor = "#ffd16605"; }
+
+              return (
+                <div key={c.id} style={{ background: bgColor, border: `1px solid ${borderColor}`, borderRadius: 12, padding: "14px 18px", display: "flex", alignItems: "center", gap: 14, transition: "all 0.2s" }}>
+                  {/* Dia */}
+                  <div style={{ width: 50, height: 50, borderRadius: 12, background: c.pago ? SEC : c.venceu || c.venceHoje ? PRI : BG, border: `2px solid ${c.pago ? SEC : c.venceu || c.venceHoje ? PRI : BORDER}`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    <span style={{ color: c.pago || c.venceu || c.venceHoje ? "#fff" : TXT2, fontSize: 18, fontWeight: 800, lineHeight: 1 }}>{c.dia}</span>
+                    <span style={{ color: c.pago || c.venceu || c.venceHoje ? "#ffffff88" : TXT3, fontSize: 9, fontFamily: "monospace" }}>DIA</span>
+                  </div>
+
+                  {/* Info */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <span style={{ color: TXT, fontSize: 15, fontWeight: 600 }}>{c.nome}</span>
+                      {c.pago && <span style={{ background: `${SEC}22`, color: SEC, borderRadius: 20, padding: "1px 10px", fontSize: 11, fontWeight: 700 }}>✓ PAGO</span>}
+                      {c.venceHoje && !c.pago && <span style={{ background: "#ffd16622", color: "#ffd166", borderRadius: 20, padding: "1px 10px", fontSize: 11, fontWeight: 700 }}>⚠️ VENCE HOJE</span>}
+                      {c.venceu && !c.venceHoje && !c.pago && <span style={{ background: `${PRI}22`, color: PRI, borderRadius: 20, padding: "1px 10px", fontSize: 11, fontWeight: 700 }}>🚨 VENCIDA</span>}
+                      {c.venceEmBreve && <span style={{ background: "#ffd16612", color: "#ffd166", borderRadius: 20, padding: "1px 10px", fontSize: 11 }}>Vence em {c.dia - todayDay} dias</span>}
+                    </div>
+                    <div style={{ color: TXT2, fontSize: 12, marginTop: 3 }}>{c.categoria} {c.pago && c.pagamentos?.[mesKey] ? `· Pago em ${c.pagamentos[mesKey].data}` : ""}</div>
+                  </div>
+
+                  {/* Valor */}
+                  <div style={{ color: c.pago ? SEC : TXT, fontFamily: "monospace", fontSize: 16, fontWeight: 700, flexShrink: 0 }}>
+                    {fmt(c.valor)}
+                  </div>
+
+                  {/* Ações */}
+                  <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                    <button onClick={() => togglePago(c.id)} style={{ background: c.pago ? `${SEC}22` : GRAD, color: c.pago ? SEC : "#fff", border: `1px solid ${c.pago ? `${SEC}44` : "transparent"}`, borderRadius: 8, padding: "7px 14px", cursor: "pointer", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" }}>
+                      {c.pago ? "↩ Desfazer" : "✓ Pagar"}
+                    </button>
+                    <button onClick={() => removeConta(c.id)} style={{ background: "transparent", color: TXT3, border: `1px solid ${BORDER}`, borderRadius: 8, padding: "7px 10px", cursor: "pointer", fontSize: 13 }}>🗑</button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Admin Dashboard ───────────────────────────────────────────────────────────
 function AdminDashboard({ data, setData, onBack }) {
   const [tab, setTab] = useState("visao");
@@ -663,7 +879,7 @@ function AdminDashboard({ data, setData, onBack }) {
   const TABS = [
     { id: "visao", label: "Visão Geral" }, { id: "evolucao", label: "Evolução" },
     { id: "categorias", label: "Categorias" }, { id: "transacoes", label: "Transações" },
-    { id: "pagamentos", label: "💳 Pagamentos" }, { id: "gastos", label: "📤 Lançar Gasto" },
+    { id: "pagamentos", label: "💳 Pagamentos" }, { id: "gastos", label: "📤 Lançar Gasto" }, { id: "contasfixas", label: "🗓 Contas Fixas" },
   ];
 
   return (
@@ -764,18 +980,26 @@ function AdminDashboard({ data, setData, onBack }) {
 
         {tab === "categorias" && <CategoriasTab transacoes={transacoesFilt} mesFiltro={mes} data={data} openEditTransacao={editTransacao} />}
 
-        {tab === "transacoes" && (
+        {tab === "transacoes" && (() => {
+          const [tipoFilt, setTipoFilt] = React.useState("Todos");
+          const listaFilt = tipoFilt === "Todos" ? transacoesFilt : transacoesFilt.filter(t => t.tipo === tipoFilt);
+          return (
           <div style={{ background: BG2, border: `1px solid ${BORDER}`, borderRadius: 16, padding: 24 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
-              <h3 style={{ margin: 0, fontSize: 16, color: TXT }}>Transações <span style={{ color: TXT3, fontSize: 13, fontWeight: 400 }}>({transacoesFilt.length})</span></h3>
-              <span style={{ color: TXT3, fontSize: 12 }}>Clique ✏️ para editar ou excluir</span>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
+              <h3 style={{ margin: 0, fontSize: 16, color: TXT }}>Transações <span style={{ color: TXT3, fontSize: 13, fontWeight: 400 }}>({listaFilt.length})</span></h3>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                {["Todos","Receita","Despesa"].map(tipo => (
+                  <button key={tipo} onClick={() => setTipoFilt(tipo)} style={{ background: tipoFilt === tipo ? GRAD : BG3, color: tipoFilt === tipo ? "#fff" : TXT2, border: `1px solid ${tipoFilt === tipo ? "transparent" : BORDER}`, borderRadius: 8, padding: "5px 14px", cursor: "pointer", fontSize: 12, fontFamily: "monospace", fontWeight: tipoFilt === tipo ? 700 : 400 }}>{tipo}</button>
+                ))}
+                <span style={{ color: TXT3, fontSize: 12 }}>| ✏️ editar</span>
+              </div>
             </div>
-            {transacoesFilt.length > 0 ? (
+            {listaFilt.length > 0 ? (
               <div style={{ overflowX: "auto" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
                   <thead><tr>{["Data","Descrição","Categoria","Tipo","Valor",""].map(h => <th key={h} style={{ textAlign: "left", padding: "9px 14px", color: TXT2, fontSize: 11, fontFamily: "monospace", textTransform: "uppercase", borderBottom: `1px solid ${BORDER}`, fontWeight: 400 }}>{h}</th>)}</tr></thead>
                   <tbody>
-                    {transacoesFilt.map((t, i) => {
+                    {listaFilt.map((t, i) => {
                       const ri = data.transacoes.indexOf(t);
                       return (
                         <tr key={i} style={{ borderBottom: `1px solid ${BORDER}44` }}>
@@ -795,7 +1019,8 @@ function AdminDashboard({ data, setData, onBack }) {
               </div>
             ) : <div style={{ padding: "48px 0", textAlign: "center", color: TXT3 }}>Nenhuma transação{mes !== "todos" ? ` em ${mes}` : " ainda"}.</div>}
           </div>
-        )}
+          );
+        })()}
 
         {tab === "pagamentos" && (() => {
           const pags = filterByMonth(data.transacoes.filter(t => t.tipo === "Receita"), mes);
@@ -876,6 +1101,7 @@ function AdminDashboard({ data, setData, onBack }) {
         })()}
 
         {tab === "gastos" && <GuidedExpense data={data} setData={setData} />}
+        {tab === "contasfixas" && <ContasFixasTab data={data} setData={setData} />}
       </div>
       <style>{`@keyframes slideIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}*{box-sizing:border-box}`}</style>
     </div>
@@ -1012,7 +1238,7 @@ function DadosView({ data, onBack }) {
                         <Pie data={porCat} cx="50%" cy="50%" innerRadius={45} outerRadius={72} dataKey="valor" nameKey="nome">
                           {porCat.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                         </Pie>
-                        <Tooltip formatter={v => fmt(v)} contentStyle={{ background: BG2, border: `1px solid ${BORDER}`, borderRadius: 8 }} />
+                        <Tooltip formatter={v => fmt(v,"compact")} contentStyle={{ background: BG2, border: `1px solid ${BORDER}`, borderRadius: 8 }} />
                       </PieChart>
                     </ResponsiveContainer>
                     <div style={{ display: "flex", flexDirection: "column", gap: 5, marginTop: 8 }}>
@@ -1192,7 +1418,7 @@ export default function App() {
     loadData().then(saved => {
       if (saved) {
         const mensal = EMPTY.mensal.map(m => saved.mensal?.find(x => x.mes === m.mes) || m);
-        setDataState({ ...EMPTY, ...saved, mensal });
+        setDataState({ ...EMPTY, ...saved, mensal, contasfixas: saved.contasfixas || [] });
       }
       setReady(true);
     });
