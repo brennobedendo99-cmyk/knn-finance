@@ -676,6 +676,359 @@ function ContasFixasTab({ data, setData, mesFiltroGlobal }) {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ nome: "", valor: "", dia: "", categoria: "Contas Fixas" });
 
+  const now = new Date();
+  const todayDay = now.getDate();
+  const todayMonthIdx = now.getMonth();
+  const todayYear = now.getFullYear();
+
+  // Use global filter if set, otherwise current month
+  const mesIdx = mesFiltroGlobal && mesFiltroGlobal !== "todos"
+    ? MONTHS.indexOf(mesFiltroGlobal)
+    : todayMonthIdx;
+  const ano = todayYear;
+  const mesKey = `${ano}-${String(mesIdx + 1).padStart(2, "0")}`;
+  const isCurrentMonth = mesIdx === todayMonthIdx;
+
+  const contas = data.contasfixas || [];
+
+  function addConta() {
+    if (!form.nome.trim() || !form.valor || !form.dia) return;
+    const nova = {
+      id: Date.now(),
+      nome: form.nome.trim(),
+      valor: parseFloat(form.valor.replace(",", ".")),
+      dia: parseInt(form.dia),
+      categoria: form.categoria,
+      pagamentos: {},
+    };
+    setData({ ...data, contasfixas: [...contas, nova] });
+    setForm({ nome: "", valor: "", dia: "", categoria: "Contas Fixas" });
+    setShowForm(false);
+  }
+
+  function marcarPago(id) {
+    const conta = contas.find(c => c.id === id);
+    if (!conta) return;
+    const pagamentos = { ...(conta.pagamentos || {}) };
+    const jaPago = !!pagamentos[mesKey];
+    const dataStr = `${String(isCurrentMonth ? todayDay : 1).padStart(2,"0")}/${String(mesIdx+1).padStart(2,"0")}/${ano}`;
+
+    let novasContas;
+    let novaTransacoes = data.transacoes;
+    let novoMensal = data.mensal;
+
+    if (jaPago) {
+      delete pagamentos[mesKey];
+      novasContas = contas.map(c => c.id === id ? { ...c, pagamentos: { ...pagamentos } } : c);
+    } else {
+      pagamentos[mesKey] = { data: dataStr, valor: conta.valor };
+      novasContas = contas.map(c => c.id === id ? { ...c, pagamentos: { ...pagamentos } } : c);
+      const t = { data: dataStr, descricao: conta.nome, categoria: conta.categoria, forma: "Conta Fixa", valor: conta.valor, tipo: "Despesa" };
+      novaTransacoes = [t, ...data.transacoes];
+      novoMensal = data.mensal.map(m => m.mes === MONTHS[mesIdx] ? { ...m, despesas: m.despesas + conta.valor } : m);
+    }
+
+    setData({ ...data, contasfixas: novasContas, transacoes: novaTransacoes, mensal: novoMensal });
+  }
+
+  function removerConta(id) {
+    setData({ ...data, contasfixas: contas.filter(c => c.id !== id) });
+  }
+
+  const contasComStatus = [...contas]
+    .sort((a, b) => a.dia - b.dia)
+    .map(c => {
+      const pago = !!c.pagamentos?.[mesKey];
+      const vencida = isCurrentMonth && !pago && c.dia < todayDay;
+      const venceHoje = isCurrentMonth && !pago && c.dia === todayDay;
+      const venceEmBreve = isCurrentMonth && !pago && c.dia > todayDay && c.dia - todayDay <= 3;
+      return { ...c, pago, vencida, venceHoje, venceEmBreve };
+    });
+
+  const totalMes = contas.reduce((s, c) => s + c.valor, 0);
+  const totalPago = contasComStatus.filter(c => c.pago).reduce((s, c) => s + c.valor, 0);
+  const vencidas = contasComStatus.filter(c => c.vencida);
+  const hojeContas = contasComStatus.filter(c => c.venceHoje);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+
+      {/* Alertas só no mês atual */}
+      {isCurrentMonth && (vencidas.length > 0 || hojeContas.length > 0) && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {hojeContas.length > 0 && (
+            <div style={{ background: "#ffd16618", border: "1px solid #ffd16655", borderRadius: 12, padding: "12px 18px", display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 20 }}>⚠️</span>
+              <span style={{ color: "#ffd166", fontSize: 14, fontWeight: 600 }}>Vence hoje: {hojeContas.map(c => c.nome).join(", ")}</span>
+            </div>
+          )}
+          {vencidas.length > 0 && (
+            <div style={{ background: `${PRI}18`, border: `1px solid ${PRI}55`, borderRadius: 12, padding: "12px 18px", display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 20 }}>🚨</span>
+              <span style={{ color: PRI, fontSize: 14, fontWeight: 600 }}>Vencidas: {vencidas.map(c => c.nome).join(", ")}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* KPIs */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 16 }}>
+        <div style={{ background: BG2, border: `1px solid ${BORDER}`, borderRadius: 16, padding: "20px 24px" }}>
+          <span style={{ color: TXT2, fontSize: 11, fontFamily: "monospace", textTransform: "uppercase", letterSpacing: 1 }}>Total Mensal</span>
+          <div style={{ color: TXT, fontSize: 24, fontWeight: 700, marginTop: 8 }}>{fmt(totalMes)}</div>
+          <div style={{ color: TXT2, fontSize: 12, marginTop: 4 }}>{contas.length} contas fixas</div>
+        </div>
+        <div style={{ background: `${SEC}12`, border: `1px solid ${SEC}33`, borderRadius: 16, padding: "20px 24px" }}>
+          <span style={{ color: TXT2, fontSize: 11, fontFamily: "monospace", textTransform: "uppercase", letterSpacing: 1 }}>Pago em {MONTHS[mesIdx]}</span>
+          <div style={{ color: SEC, fontSize: 24, fontWeight: 700, marginTop: 8 }}>{fmt(totalPago)}</div>
+          <div style={{ color: TXT2, fontSize: 12, marginTop: 4 }}>{contasComStatus.filter(c => c.pago).length} de {contas.length} pagas</div>
+        </div>
+        <div style={{ background: `${PRI}12`, border: `1px solid ${PRI}33`, borderRadius: 16, padding: "20px 24px" }}>
+          <span style={{ color: TXT2, fontSize: 11, fontFamily: "monospace", textTransform: "uppercase", letterSpacing: 1 }}>Pendente</span>
+          <div style={{ color: PRI, fontSize: 24, fontWeight: 700, marginTop: 8 }}>{fmt(totalMes - totalPago)}</div>
+          <div style={{ color: TXT2, fontSize: 12, marginTop: 4 }}>{contasComStatus.filter(c => !c.pago).length} pendentes</div>
+        </div>
+      </div>
+
+      {/* Lista */}
+      <div style={{ background: BG2, border: `1px solid ${BORDER}`, borderRadius: 16, padding: 24 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+          <h3 style={{ margin: 0, fontSize: 16, color: TXT }}>
+            📅 {MONTHS[mesIdx]} / {ano}
+            <span style={{ color: TXT2, fontSize: 13, fontWeight: 400, marginLeft: 10 }}>
+              {mesFiltroGlobal === "todos" || !mesFiltroGlobal ? "— use o filtro de mês acima para navegar" : ""}
+            </span>
+          </h3>
+          <button onClick={() => setShowForm(f => !f)} style={{ background: GRAD, color: "#fff", border: "none", borderRadius: 8, padding: "7px 18px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+            {showForm ? "✕ Fechar" : "+ Nova Conta"}
+          </button>
+        </div>
+
+        {showForm && (
+          <div style={{ background: BG3, border: `1px solid ${BORDER}`, borderRadius: 12, padding: 16, marginBottom: 16 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: 10, marginBottom: 10 }}>
+              <div>
+                <label style={{ color: TXT2, fontSize: 11, fontFamily: "monospace", display: "block", marginBottom: 4 }}>NOME DA CONTA</label>
+                <input value={form.nome} onChange={e => setForm(f => ({ ...f, nome: e.target.value }))} placeholder="Ex: Aluguel, Energia..." style={{ width: "100%", background: BG, border: `1px solid ${BORDER}`, borderRadius: 8, padding: "8px 12px", color: TXT, fontSize: 13, outline: "none", boxSizing: "border-box" }} />
+              </div>
+              <div>
+                <label style={{ color: TXT2, fontSize: 11, fontFamily: "monospace", display: "block", marginBottom: 4 }}>VALOR (R$)</label>
+                <input value={form.valor} onChange={e => setForm(f => ({ ...f, valor: e.target.value }))} placeholder="0,00" style={{ width: "100%", background: BG, border: `1px solid ${BORDER}`, borderRadius: 8, padding: "8px 12px", color: TXT, fontSize: 13, outline: "none", boxSizing: "border-box" }} />
+              </div>
+              <div>
+                <label style={{ color: TXT2, fontSize: 11, fontFamily: "monospace", display: "block", marginBottom: 4 }}>DIA VENC.</label>
+                <input type="number" min="1" max="31" value={form.dia} onChange={e => setForm(f => ({ ...f, dia: e.target.value }))} placeholder="10" style={{ width: "100%", background: BG, border: `1px solid ${BORDER}`, borderRadius: 8, padding: "8px 12px", color: TXT, fontSize: 13, outline: "none", boxSizing: "border-box" }} />
+              </div>
+              <div>
+                <label style={{ color: TXT2, fontSize: 11, fontFamily: "monospace", display: "block", marginBottom: 4 }}>CATEGORIA</label>
+                <select value={form.categoria} onChange={e => setForm(f => ({ ...f, categoria: e.target.value }))} style={{ width: "100%", background: BG, border: `1px solid ${BORDER}`, borderRadius: 8, padding: "8px 12px", color: TXT, fontSize: 13, outline: "none" }}>
+                  {TIPOS_GASTO.map(t => <option key={t}>{t}</option>)}
+                </select>
+              </div>
+            </div>
+            <button onClick={addConta} style={{ background: GRAD, color: "#fff", border: "none", borderRadius: 8, padding: "9px 24px", fontWeight: 700, cursor: "pointer" }}>✓ Adicionar</button>
+          </div>
+        )}
+
+        {contasComStatus.length === 0 ? (
+          <div style={{ padding: "40px 0", textAlign: "center", color: TXT3 }}>
+            Nenhuma conta fixa. <span style={{ color: SEC }}>+ Nova Conta</span> para começar.
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {contasComStatus.map(c => {
+              let border = BORDER;
+              let bg = BG3;
+              if (c.pago) { border = `${SEC}55`; bg = `${SEC}0d`; }
+              else if (c.venceHoje) { border = "#ffd16655"; bg = "#ffd16608"; }
+              else if (c.vencida) { border = `${PRI}55`; bg = `${PRI}08`; }
+              else if (c.venceEmBreve) { border = "#ffd16633"; }
+
+              return (
+                <div key={c.id} style={{ background: bg, border: `1px solid ${border}`, borderRadius: 12, padding: "14px 18px", display: "flex", alignItems: "center", gap: 14 }}>
+                  <div style={{ width: 52, height: 52, borderRadius: 12, background: c.pago ? SEC : c.vencida || c.venceHoje ? PRI : BG2, border: `2px solid ${c.pago ? SEC : c.vencida || c.venceHoje ? PRI : BORDER}`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    <span style={{ color: c.pago || c.vencida || c.venceHoje ? "#fff" : TXT, fontSize: 18, fontWeight: 800, lineHeight: 1 }}>{c.dia}</span>
+                    <span style={{ color: c.pago || c.vencida || c.venceHoje ? "#ffffff88" : TXT3, fontSize: 9, fontFamily: "monospace" }}>DIA</span>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <span style={{ color: TXT, fontSize: 14, fontWeight: 600 }}>{c.nome}</span>
+                      {c.pago && <span style={{ background: `${SEC}22`, color: SEC, borderRadius: 20, padding: "1px 10px", fontSize: 11, fontWeight: 700 }}>✓ PAGO</span>}
+                      {c.venceHoje && <span style={{ background: "#ffd16622", color: "#ffd166", borderRadius: 20, padding: "1px 10px", fontSize: 11, fontWeight: 700 }}>⚠️ HOJE</span>}
+                      {c.vencida && <span style={{ background: `${PRI}22`, color: PRI, borderRadius: 20, padding: "1px 10px", fontSize: 11, fontWeight: 700 }}>🚨 VENCIDA</span>}
+                      {c.venceEmBreve && <span style={{ background: "#ffd16612", color: "#ffd166", borderRadius: 20, padding: "1px 10px", fontSize: 11 }}>em {c.dia - todayDay}d</span>}
+                    </div>
+                    <div style={{ color: TXT2, fontSize: 12, marginTop: 3 }}>
+                      {c.categoria}{c.pago && c.pagamentos?.[mesKey] ? ` · Pago em ${c.pagamentos[mesKey].data}` : ""}
+                    </div>
+                  </div>
+                  <div style={{ color: c.pago ? SEC : TXT, fontFamily: "monospace", fontSize: 15, fontWeight: 700, flexShrink: 0 }}>{fmt(c.valor)}</div>
+                  <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                    <button onClick={() => marcarPago(c.id)} style={{ background: c.pago ? `${SEC}22` : GRAD, color: c.pago ? SEC : "#fff", border: `1px solid ${c.pago ? `${SEC}44` : "transparent"}`, borderRadius: 8, padding: "7px 14px", cursor: "pointer", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" }}>
+                      {c.pago ? "↩ Desfazer" : "✓ Pagar"}
+                    </button>
+                    <button onClick={() => removerConta(c.id)} style={{ background: "transparent", color: TXT3, border: `1px solid ${BORDER}`, borderRadius: 8, padding: "7px 10px", cursor: "pointer", fontSize: 13 }}>🗑</button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+// ── Landing Page ──────────────────────────────────────────────────────────────
+function LandingPage({ onSelect }) {
+  return (
+    <div style={{ minHeight: "100vh", background: BG, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", fontFamily: "sans-serif", padding: 24, position: "relative", overflow: "hidden" }}>
+      <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500;600&family=DM+Mono&display=swap" rel="stylesheet" />
+      <div style={{ position: "absolute", top: "-10%", left: "-5%", width: 500, height: 500, borderRadius: "50%", background: "radial-gradient(circle,#7C3AED14,transparent 65%)", pointerEvents: "none" }} />
+      <div style={{ position: "absolute", bottom: "-10%", right: "-5%", width: 600, height: 600, borderRadius: "50%", background: "radial-gradient(circle,#E91E8C10,transparent 65%)", pointerEvents: "none" }} />
+
+      <div style={{ textAlign: "center", marginBottom: 44, display: "flex", flexDirection: "column", alignItems: "center" }}>
+        <img src={LOGO} alt="KNN Idiomas São Cristóvão" style={{ height: 110, marginBottom: 16, filter: "drop-shadow(0 4px 24px #E91E8C44)", display: "block" }} />
+        <h1 style={{ fontFamily: "'Syne',sans-serif", fontSize: 30, fontWeight: 800, margin: "0 0 6px", color: TXT, letterSpacing: -1 }}>
+          KNN <span style={{ background: GRAD, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>Finance</span>
+        </h1>
+        <p style={{ color: TXT2, margin: 0, fontSize: 14 }}>Sistema Financeiro Inteligente · São Cristóvão</p>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, maxWidth: 960, width: "100%" }}>
+        {[
+          { role: "admin", icon: "🔐", title: "Administrador", desc: "Acesso completo ao dashboard, gráficos, relatórios e lançamentos.", features: ["📊 Dashboard completo","📤 Lançar gastos","🔒 Acesso protegido"], btn: "Entrar como Admin →" },
+          { role: "colaborador", icon: "👥", title: "Colaborador", desc: "Registre pagamentos recebidos dos alunos de forma simples.", features: ["💳 Registrar pagamentos","📅 Data automática","📋 Filtro por mês"], btn: "Entrar como Colaborador →" },
+          { role: "dados", icon: "📊", title: "Dados", desc: "Visualização completa dos dados financeiros. Somente leitura, sem edições.", features: ["📈 Gráficos e KPIs","📋 Transações e pagamentos","👁 Somente visualização"], btn: "Ver Dados →" },
+        ].map(({ role, icon, title, desc, features, btn }) => (
+          <button key={role} onClick={() => onSelect(role)} style={{ background: BG2, border: `1px solid ${BORDER}`, borderRadius: 20, padding: "28px 20px", cursor: "pointer", textAlign: "left", transition: "all 0.25s", color: "inherit", display: "flex", flexDirection: "column", gap: 14 }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = "#7C3AED55"; e.currentTarget.style.transform = "translateY(-4px)"; e.currentTarget.style.boxShadow = "0 20px 48px #7C3AED22"; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = BORDER; e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "none"; }}>
+            <div style={{ width: 48, height: 48, background: "linear-gradient(135deg,#7C3AED33,#E91E8C22)", border: "1px solid #7C3AED44", borderRadius: 14, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>{icon}</div>
+            <div>
+              <h2 style={{ fontFamily: "'Syne',sans-serif", fontSize: 18, margin: "0 0 7px", color: TXT, fontWeight: 700 }}>{title}</h2>
+              <p style={{ color: TXT2, margin: 0, fontSize: 13, lineHeight: 1.6 }}>{desc}</p>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              {features.map((f, i) => <span key={i} style={{ color: i % 2 === 0 ? SEC : PRI, fontSize: 12, fontFamily: "'DM Mono',monospace" }}>{f}</span>)}
+            </div>
+            <div style={{ background: GRAD, borderRadius: 10, padding: "11px 0", textAlign: "center", color: "#fff", fontWeight: 700, fontSize: 14, fontFamily: "'Syne',sans-serif", boxShadow: "0 4px 20px #7C3AED44" }}>{btn}</div>
+          </button>
+        ))}
+      </div>
+      <p style={{ color: TXT3, marginTop: 28, fontSize: 12, fontFamily: "'DM Mono',monospace" }}>{todayStr()} · KNN Finance</p>
+    </div>
+  );
+}
+
+// ── Admin Gate ────────────────────────────────────────────────────────────────
+function AdminGate({ onSuccess, onBack }) {
+  const [pass, setPass] = useState("");
+  const [error, setError] = useState(false);
+  const [show, setShow] = useState(false);
+  const ref = useRef();
+  useEffect(() => { setTimeout(() => ref.current?.focus(), 100); }, []);
+  function tryLogin() { if (pass === ADMIN_PASS) onSuccess(); else { setError(true); setPass(""); setTimeout(() => setError(false), 2000); } }
+  return (
+    <div style={{ minHeight: "100vh", background: BG, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "sans-serif", position: "relative", overflow: "hidden" }}>
+      <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Mono&display=swap" rel="stylesheet" />
+      <div style={{ position: "absolute", top: "15%", left: "15%", width: 400, height: 400, borderRadius: "50%", background: "radial-gradient(circle,#7C3AED12,transparent 65%)", pointerEvents: "none" }} />
+      <div style={{ position: "absolute", bottom: "10%", right: "10%", width: 350, height: 350, borderRadius: "50%", background: "radial-gradient(circle,#E91E8C0e,transparent 65%)", pointerEvents: "none" }} />
+      <div style={{ width: "100%", maxWidth: 420, padding: 24, position: "relative", zIndex: 1 }}>
+        <div style={{ background: BG2, border: `1px solid ${error ? `${PRI}66` : BORDER}`, borderRadius: 24, padding: "40px 32px", textAlign: "center", transition: "border-color 0.3s", animation: error ? "shake 0.3s" : "none", boxShadow: "0 24px 64px #00000055" }}>
+          <img src={LOGO} alt="KNN" style={{ height: 80, marginBottom: 20, filter: "drop-shadow(0 4px 16px #E91E8C33)" }} />
+          <h2 style={{ fontFamily: "'Syne',sans-serif", fontSize: 20, margin: "0 0 4px", color: TXT }}>Área do Administrador</h2>
+          <p style={{ color: TXT2, margin: "0 0 24px", fontSize: 14 }}>KNN Finance · São Cristóvão</p>
+          <div style={{ position: "relative", marginBottom: 14 }}>
+            <input ref={ref} type={show ? "text" : "password"} value={pass} onChange={e => setPass(e.target.value)} onKeyDown={e => e.key === "Enter" && tryLogin()} placeholder="••••••••••••"
+              style={{ width: "100%", background: BG3, border: `1px solid ${error ? `${PRI}66` : BORDER}`, borderRadius: 12, padding: "13px 44px 13px 16px", color: TXT, fontSize: 16, fontFamily: "'DM Mono',monospace", outline: "none", boxSizing: "border-box", letterSpacing: 2 }} />
+            <button onClick={() => setShow(s => !s)} style={{ position: "absolute", right: 13, top: "50%", transform: "translateY(-50%)", background: "transparent", border: "none", color: TXT2, cursor: "pointer", fontSize: 16 }}>{show ? "🙈" : "👁"}</button>
+          </div>
+          {error && <p style={{ color: PRI, fontSize: 13, margin: "0 0 14px" }}>❌ Senha incorreta.</p>}
+          <button onClick={tryLogin} style={{ width: "100%", background: GRAD, color: "#fff", border: "none", borderRadius: 12, padding: 13, fontWeight: 700, fontSize: 15, cursor: "pointer", marginBottom: 10, boxShadow: "0 4px 20px #7C3AED44" }}>Entrar</button>
+          <button onClick={onBack} style={{ width: "100%", background: "transparent", color: TXT2, border: `1px solid ${BORDER}`, borderRadius: 12, padding: 12, cursor: "pointer", fontSize: 14 }}>← Voltar</button>
+        </div>
+      </div>
+      <style>{`@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-8px)}75%{transform:translateX(8px)}}`}</style>
+    </div>
+  );
+}
+
+// ── Colaborador View ──────────────────────────────────────────────────────────
+function ColaboradorView({ data, setData, onBack }) {
+  return (
+    <div style={{ minHeight: "100vh", background: BG, display: "flex", flexDirection: "column", fontFamily: "sans-serif" }}>
+      <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700&family=DM+Mono&display=swap" rel="stylesheet" />
+      <div style={{ background: `linear-gradient(90deg,${BG},${BG2})`, borderBottom: `1px solid ${BORDER}`, padding: "0 24px", display: "flex", alignItems: "center", justifyContent: "space-between", height: 60, flexShrink: 0, boxShadow: "0 4px 24px #00000044" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <img src={LOGO} alt="KNN" style={{ height: 32, filter: "drop-shadow(0 2px 8px #E91E8C33)" }} />
+          <span style={{ fontFamily: "'Syne',sans-serif", fontSize: 16, fontWeight: 800, background: GRAD, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>KNN Finance</span>
+          <span style={{ color: TXT3, fontSize: 11, fontFamily: "monospace" }}>· Colaborador</span>
+        </div>
+        <button onClick={onBack} style={{ background: "transparent", color: TXT2, border: `1px solid ${BORDER}`, borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontSize: 13 }}>← Sair</button>
+      </div>
+      <div style={{ flex: 1, display: "grid", gridTemplateColumns: "1fr 340px", overflow: "hidden" }}>
+        <div style={{ borderRight: `1px solid ${BORDER}`, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+          <GuidedPayment data={data} setData={setData} />
+        </div>
+        <ColabPanel transacoes={data.transacoes} />
+      </div>
+    </div>
+  );
+}
+
+
+
+// ── Transacoes Tab ────────────────────────────────────────────────────────────
+function TransacoesTab({ transacoes, data, mes, editTransacao }) {
+  const [tipoFilt, setTipoFilt] = useState("Todos");
+  const listaFilt = tipoFilt === "Todos" ? transacoes : transacoes.filter(t => t.tipo === tipoFilt);
+
+  return (
+    <div style={{ background: BG2, border: `1px solid ${BORDER}`, borderRadius: 16, padding: 24 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
+        <h3 style={{ margin: 0, fontSize: 16, color: TXT }}>Transações <span style={{ color: TXT3, fontSize: 13, fontWeight: 400 }}>({listaFilt.length})</span></h3>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {["Todos","Receita","Despesa"].map(tipo => (
+            <button key={tipo} onClick={() => setTipoFilt(tipo)} style={{ background: tipoFilt === tipo ? GRAD : BG3, color: tipoFilt === tipo ? "#fff" : TXT2, border: `1px solid ${tipoFilt === tipo ? "transparent" : BORDER}`, borderRadius: 8, padding: "5px 14px", cursor: "pointer", fontSize: 12, fontFamily: "monospace", fontWeight: tipoFilt === tipo ? 700 : 400 }}>{tipo}</button>
+          ))}
+          <span style={{ color: TXT3, fontSize: 12 }}>| ✏️ editar</span>
+        </div>
+      </div>
+      {listaFilt.length > 0 ? (
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead><tr>{["Data","Descrição","Categoria","Tipo","Valor",""].map(h => <th key={h} style={{ textAlign: "left", padding: "9px 14px", color: TXT2, fontSize: 11, fontFamily: "monospace", textTransform: "uppercase", borderBottom: `1px solid ${BORDER}`, fontWeight: 400 }}>{h}</th>)}</tr></thead>
+            <tbody>
+              {listaFilt.map((t, i) => {
+                const ri = data.transacoes.indexOf(t);
+                return (
+                  <tr key={i} style={{ borderBottom: `1px solid ${BORDER}44` }}>
+                    <td style={{ padding: "11px 14px", color: TXT2, fontSize: 12, fontFamily: "monospace" }}>{t.data}</td>
+                    <td style={{ padding: "11px 14px", color: TXT, fontSize: 13 }}>{t.descricao}</td>
+                    <td style={{ padding: "11px 14px" }}><span style={{ background: BG3, borderRadius: 6, padding: "2px 8px", fontSize: 11, color: TXT2 }}>{t.categoria}</span></td>
+                    <td style={{ padding: "11px 14px" }}><span style={{ color: t.tipo === "Receita" ? SEC : PRI, fontSize: 13, fontWeight: 600 }}>{t.tipo}</span></td>
+                    <td style={{ padding: "11px 14px", color: t.tipo === "Receita" ? SEC : PRI, fontFamily: "monospace", fontSize: 13, fontWeight: 700 }}>{t.tipo === "Receita" ? "+" : "-"}{fmt(t.valor)}</td>
+                    <td style={{ padding: "11px 14px" }}>
+                      <button onClick={() => editTransacao(ri >= 0 ? ri : i)} style={{ background: BG3, border: `1px solid ${BORDER}`, borderRadius: 7, color: TXT2, cursor: "pointer", padding: "4px 10px", fontSize: 12 }}>✏️</button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : <div style={{ padding: "48px 0", textAlign: "center", color: TXT3 }}>Nenhuma transação{mes !== "todos" ? ` em ${mes}` : " ainda"}.</div>}
+    </div>
+  );
+}
+
+// ── Contas Fixas Tab ──────────────────────────────────────────────────────────
+function ContasFixasTab({ data, setData, mesFiltroGlobal }) {
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ nome: "", valor: "", dia: "", categoria: "Contas Fixas" });
+
   // Sync with global month filter if set
   const now = new Date();
   const globalMesIdx = mesFiltroGlobal && mesFiltroGlobal !== "todos" ? MONTHS.indexOf(mesFiltroGlobal) : now.getMonth();
