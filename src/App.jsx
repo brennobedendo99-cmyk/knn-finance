@@ -672,14 +672,25 @@ function TransacoesTab({ transacoes, data, mes, editTransacao }) {
 }
 
 // ── Contas Fixas Tab ──────────────────────────────────────────────────────────
-function ContasFixasTab({ data, setData }) {
+function ContasFixasTab({ data, setData, mesFiltroGlobal }) {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ nome: "", valor: "", dia: "", categoria: "Contas Fixas" });
 
-  // Month selector: default = current month
+  // Sync with global month filter if set
   const now = new Date();
-  const [ano, setAno] = useState(now.getFullYear());
-  const [mesIdx, setMesIdx] = useState(now.getMonth()); // 0-based
+  const globalMesIdx = mesFiltroGlobal && mesFiltroGlobal !== "todos" ? MONTHS.indexOf(mesFiltroGlobal) : now.getMonth();
+  const globalAno = now.getFullYear(); // always current year for global filter
+
+  const [ano, setAno] = useState(() => globalAno);
+  const [mesIdx, setMesIdx] = useState(() => globalMesIdx >= 0 ? globalMesIdx : now.getMonth());
+
+  // Sync when global filter changes
+  useEffect(() => {
+    if (mesFiltroGlobal && mesFiltroGlobal !== "todos") {
+      const idx = MONTHS.indexOf(mesFiltroGlobal);
+      if (idx >= 0) { setMesIdx(idx); setAno(globalAno); }
+    }
+  }, [mesFiltroGlobal]);
 
   const mesKey = `${ano}-${String(mesIdx + 1).padStart(2, "0")}`;
   const isHoje = ano === now.getFullYear() && mesIdx === now.getMonth();
@@ -1131,7 +1142,7 @@ function AdminDashboard({ data, setData, onBack }) {
         })()}
 
         {tab === "gastos" && <GuidedExpense data={data} setData={setData} />}
-        {tab === "contasfixas" && <ContasFixasTab data={data} setData={setData} />}
+        {tab === "contasfixas" && <ContasFixasTab data={data} setData={setData} mesFiltroGlobal={mes} />}
       </div>
       <style>{`@keyframes slideIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}*{box-sizing:border-box}`}</style>
     </div>
