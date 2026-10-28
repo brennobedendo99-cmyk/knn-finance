@@ -38,6 +38,11 @@ const EMPTY = {
   contasfixas: [],
 };
 
+function calcSummaryFromTransacoes(transacoes) {
+  const receita = transacoes.filter(t => t.tipo === "Receita").reduce((s, t) => s + Number(t.valor || 0), 0);
+  const despesas = transacoes.filter(t => t.tipo === "Despesa").reduce((s, t) => s + Number(t.valor || 0), 0);
+  return { receita, despesas, lucro: receita - despesas, margem: receita ? (receita - despesas) / receita : 0 };
+}
 function calcSummary(mensal) {
   const receita = mensal.reduce((s, r) => s + r.receita, 0);
   const despesas = mensal.reduce((s, r) => s + r.despesas, 0);
@@ -718,8 +723,23 @@ function ContasFixasTab({ data, setData, mesFiltroGlobal }) {
     let novoMensal = data.mensal;
 
     if (jaPago) {
+      const valorPago = pagamentos[mesKey]?.valor || conta.valor;
       delete pagamentos[mesKey];
       novasContas = contas.map(c => c.id === id ? { ...c, pagamentos: { ...pagamentos } } : c);
+      // Remove a transação correspondente (a mais recente com mesmo nome e mês)
+      const mesNum = String(mesIdx + 1).padStart(2, "0");
+      let removido = false;
+      novaTransacoes = data.transacoes.filter(t => {
+        if (!removido && t.tipo === "Despesa" && t.descricao === conta.nome && t.forma === "Conta Fixa") {
+          const partes = String(t.data || "").split("/");
+          if (partes.length === 3 && partes[1] === mesNum && partes[2] === String(ano)) {
+            removido = true;
+            return false;
+          }
+        }
+        return true;
+      });
+      novoMensal = data.mensal.map(m => m.mes === MONTHS[mesIdx] ? { ...m, despesas: Math.max(0, m.despesas - valorPago) } : m);
     } else {
       pagamentos[mesKey] = { data: dataStr, valor: conta.valor };
       novasContas = contas.map(c => c.id === id ? { ...c, pagamentos: { ...pagamentos } } : c);
@@ -1088,8 +1108,22 @@ function ContasFixasTab({ data, setData, mesFiltroGlobal }) {
     let novoMensal = data.mensal;
 
     if (jaPago) {
+      const valorPago = pagamentos[mesKey]?.valor || conta.valor;
       delete pagamentos[mesKey];
       novasContas = contas.map(c => c.id === id ? { ...c, pagamentos: { ...pagamentos } } : c);
+      const mesNum = String(mesIdx + 1).padStart(2, "0");
+      let removido = false;
+      novaTransacoes = data.transacoes.filter(t => {
+        if (!removido && t.tipo === "Despesa" && t.descricao === conta.nome && t.forma === "Conta Fixa") {
+          const partes = String(t.data || "").split("/");
+          if (partes.length === 3 && partes[1] === mesNum && partes[2] === String(ano)) {
+            removido = true;
+            return false;
+          }
+        }
+        return true;
+      });
+      novoMensal = data.mensal.map(m => m.mes === MONTHS[mesIdx] ? { ...m, despesas: Math.max(0, m.despesas - valorPago) } : m);
     } else {
       pagamentos[mesKey] = { data: dataStr, valor: conta.valor };
       novasContas = contas.map(c => c.id === id ? { ...c, pagamentos: { ...pagamentos } } : c);
@@ -1287,7 +1321,7 @@ function AdminDashboard({ data, setData, onBack }) {
 
   const mensalFilt = mes === "todos" ? data.mensal : data.mensal.filter(m => m.mes === mes);
   const transacoesFilt = filterByMonth(data.transacoes, mes);
-  const summary = calcSummary(mensalFilt);
+  const summary = calcSummaryFromTransacoes(transacoesFilt);
   const activeMensal = mensalFilt.filter(m => m.receita > 0 || m.despesas > 0);
 
   function editTransacao(i) {
@@ -1542,7 +1576,7 @@ function DadosView({ data, onBack }) {
 
   const mensalFilt = mes === "todos" ? data.mensal : data.mensal.filter(m => m.mes === mes);
   const transacoesFilt = filterByMonth(data.transacoes, mes);
-  const summary = calcSummary(mensalFilt);
+  const summary = calcSummaryFromTransacoes(transacoesFilt);
   const activeMensal = mensalFilt.filter(m => m.receita > 0 || m.despesas > 0);
   const pagamentos = transacoesFilt.filter(t => t.tipo === "Receita");
   const gastos = transacoesFilt.filter(t => t.tipo === "Despesa");
