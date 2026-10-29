@@ -144,156 +144,140 @@ function EditModal({ title, fields, onSave, onDelete, onClose }) {
   );
 }
 
-// ── Guided Payment (Colaborador) ──────────────────────────────────────────────
+// ── Quick Payment Form (Colaborador) ──────────────────────────────────────────
 function GuidedPayment({ data, setData }) {
-  const [step, setStep] = useState("inicio");
-  const [form, setForm] = useState({ tipo: "", outrosDesc: "", forma: "", nome: "", valor: 0 });
-  const [msgs, setMsgs] = useState([{ from: "bot", text: `Olá! 👋 Seja bem-vindo ao KNN Finance.\n\nDeseja lançar um **pagamento recebido**?` }]);
-  const [inp, setInp] = useState("");
-  const bottomRef = useRef();
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs, step]);
-
-  const add = (from, text) => setMsgs(p => [...p, { from, text }]);
-  const go = (s, msg) => setTimeout(() => { add("bot", msg); setStep(s); }, 400);
-
-  const TIPOS = ["Aula de Reposição", "Taxa de Matrícula", "Mensalidade", "Outros"];
+  const TIPOS = ["Mensalidade", "Taxa de Matrícula", "Aula de Reposição", "Outros"];
   const FORMAS = ["Pix", "Dinheiro", "Cartão de Crédito", "Cartão de Débito"];
-  const FICONS = { "Pix": "⚡", "Dinheiro": "💵", "Cartão de Crédito": "💳", "Cartão de Débito": "🏦" };
+  const [form, setForm] = useState({ tipo: "Mensalidade", outrosDesc: "", forma: "Pix", nome: "", valor: "" });
+  const [status, setStatus] = useState(null); // null | "ok" | "err"
+  const nomeRef = useRef();
 
-  function handleTipo(t) { add("user", t); setForm(f => ({ ...f, tipo: t })); t === "Outros" ? go("outros", "Descreva o tipo:") : go("forma", "Qual a **forma de recebimento**?"); }
-  function handleOutros() { if (!inp.trim()) return; add("user", inp); setForm(f => ({ ...f, outrosDesc: inp })); setInp(""); go("forma", "Qual a **forma de recebimento**?"); }
-  function handleForma(f) { add("user", f); setForm(p => ({ ...p, forma: f })); go("nome", "**Nome** de quem pagou?"); }
-  function handleNome() { if (!inp.trim()) return; add("user", inp); setForm(f => ({ ...f, nome: inp })); setInp(""); go("valor", `Qual o **valor** recebido de ${inp}?`); }
-  function handleValor() { const n = parseFloat(inp.replace(/[^0-9.,]/g, "").replace(",", ".")); if (!n) return; add("user", `R$ ${n.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`); setForm(f => ({ ...f, valor: n })); setInp(""); go("confirm", "✅ Confirme os dados:"); }
-  function handleConfirm() {
-    add("user", "Confirmar");
-    const tipoFinal = form.tipo === "Outros" ? form.outrosDesc : form.tipo;
-    const t = { data: todayStr(), descricao: form.nome, categoria: tipoFinal, forma: form.forma, valor: form.valor, tipo: "Receita" };
-    const mesAtual = MONTHS[new Date().getMonth()];
-    const newData = { ...data, transacoes: [t, ...data.transacoes], mensal: data.mensal.map(m => m.mes === mesAtual ? { ...m, receita: m.receita + form.valor } : m) };
+  function handleSubmit(e) {
+    e.preventDefault();
+    const nome = form.nome.trim();
+    const valor = parseFloat(String(form.valor).replace(/[^0-9.,]/g, "").replace(",", "."));
+    if (!nome || !valor) { setStatus("err"); return; }
+    const tipoFinal = form.tipo === "Outros" ? (form.outrosDesc.trim() || "Outros") : form.tipo;
+    const t = { data: todayStr(), descricao: nome, categoria: tipoFinal, forma: form.forma, valor, tipo: "Receita" };
+    const mesAbrev = MONTHS[new Date().getMonth()];
+    const newData = {
+      ...data,
+      transacoes: [t, ...data.transacoes],
+      mensal: data.mensal.map(m => m.mes === mesAbrev ? { ...m, receita: (m.receita || 0) + valor } : m)
+    };
     setData(newData);
-    go("done", `🎉 **Lançado!**\n\n💰 ${fmt(form.valor)} de **${form.nome}**\n📋 ${tipoFinal} — ${form.forma}\n📅 ${todayStr()}`);
+    setStatus("ok");
+    setForm({ tipo: "Mensalidade", outrosDesc: "", forma: "Pix", nome: "", valor: "" });
+    setTimeout(() => { setStatus(null); nomeRef.current?.focus(); }, 2500);
   }
-  function reset() { setForm({ tipo: "", outrosDesc: "", forma: "", nome: "", valor: 0 }); setInp(""); setMsgs([{ from: "bot", text: "Deseja lançar um novo **pagamento**?" }]); setStep("inicio"); }
 
-  const Btn = ({ label, icon, onClick }) => (
-    <button onClick={onClick} style={{ background: BG2, border: `1px solid ${BORDER}`, borderRadius: 11, padding: "10px 13px", color: TXT, fontSize: 13, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 7, transition: "all 0.15s" }}
-      onMouseEnter={e => { e.currentTarget.style.borderColor = "#7C3AED88"; e.currentTarget.style.background = BG3; }}
-      onMouseLeave={e => { e.currentTarget.style.borderColor = BORDER; e.currentTarget.style.background = BG2; }}>
-      {icon && <span>{icon}</span>}{label}
-    </button>
-  );
-
-  const confirmRows = [
-    ["Tipo", form.tipo === "Outros" ? form.outrosDesc : form.tipo],
-    ["Forma", form.forma], ["Nome", form.nome], ["Valor", fmt(form.valor)], ["Data", todayStr()]
-  ];
+  const inp = { background: BG, border: `1px solid ${BORDER}`, borderRadius: 10, padding: "9px 12px", color: TXT, fontSize: 13, outline: "none", width: "100%", boxSizing: "border-box" };
+  const lbl = { color: TXT2, fontSize: 11, fontFamily: "monospace", textTransform: "uppercase", marginBottom: 4, display: "block" };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", background: BG }}>
-      <div style={{ flex: 1, overflowY: "auto", padding: "16px", display: "flex", flexDirection: "column", gap: 12 }}>
-        {msgs.map((m, i) => (
-          <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: m.from === "user" ? "flex-end" : "flex-start" }}>
-            {m.from === "bot"
-              ? <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-                  <div style={{ width: 28, height: 28, borderRadius: "50%", background: GRAD, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, flexShrink: 0 }}>🤖</div>
-                  <div style={{ background: BG2, border: `1px solid ${BORDER}`, borderRadius: "4px 14px 14px 14px", padding: "10px 14px", maxWidth: "82%", color: TXT, fontSize: 13, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
-                    {m.text.split(/\*\*(.*?)\*\*/g).map((p, j) => j % 2 === 1 ? <strong key={j} style={{ color: SEC }}>{p}</strong> : p)}
-                  </div>
-                </div>
-              : <div style={{ background: GRAD, borderRadius: "14px 4px 14px 14px", padding: "10px 14px", maxWidth: "75%", color: "#fff", fontSize: 13, fontWeight: 600 }}>{m.text}</div>
-            }
-          </div>
-        ))}
-        <div ref={bottomRef} />
+    <form onSubmit={handleSubmit} style={{ background: BG2, border: `1px solid ${BORDER}`, borderRadius: 16, padding: "18px 20px", display: "flex", flexDirection: "column", gap: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <span style={{ fontWeight: 700, fontSize: 15, color: TXT }}>💳 Lançar Pagamento</span>
+        {status === "ok" && <span style={{ color: "#22c55e", fontSize: 13, fontWeight: 600 }}>✅ Lançado!</span>}
+        {status === "err" && <span style={{ color: PRI, fontSize: 13 }}>⚠️ Preencha nome e valor</span>}
       </div>
-      <div style={{ padding: "12px 16px 16px", borderTop: `1px solid ${BORDER}`, background: BG2, display: "flex", flexDirection: "column", gap: 8 }}>
-        {step === "inicio" && <div style={{ display: "flex", gap: 8 }}><Btn label="✅ Sim" onClick={() => { add("user", "Sim"); go("tipo", "Qual o **tipo de pagamento**?"); }} /><Btn label="❌ Não" onClick={() => { add("user", "Não"); go("idle", "Tudo bem! Clique em **Novo Pagamento** quando precisar."); }} /></div>}
-        {step === "idle" && <button onClick={reset} style={{ background: GRAD, color: "#fff", border: "none", borderRadius: 12, padding: 12, fontWeight: 700, fontSize: 14, cursor: "pointer" }}>💳 Novo Pagamento</button>}
-        {step === "tipo" && <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>{TIPOS.map(t => <Btn key={t} label={t} onClick={() => handleTipo(t)} />)}</div>}
-        {(step === "outros" || step === "nome") && (
-          <div style={{ display: "flex", gap: 8 }}>
-            <input value={inp} onChange={e => setInp(e.target.value)} onKeyDown={e => e.key === "Enter" && (step === "outros" ? handleOutros() : handleNome())} placeholder={step === "outros" ? "Descreva..." : "Nome completo..."} autoFocus style={{ flex: 1, background: BG, border: `1px solid ${BORDER}`, borderRadius: 12, padding: "11px 14px", color: TXT, fontSize: 13, outline: "none" }} />
-            <button onClick={step === "outros" ? handleOutros : handleNome} style={{ background: GRAD, color: "#fff", border: "none", borderRadius: 12, padding: "11px 16px", fontWeight: 700, cursor: "pointer" }}>→</button>
-          </div>
-        )}
-        {step === "forma" && <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>{FORMAS.map(f => <Btn key={f} label={f} icon={FICONS[f]} onClick={() => handleForma(f)} />)}</div>}
-        {step === "valor" && (
-          <div style={{ display: "flex", gap: 8 }}>
-            <div style={{ position: "relative", flex: 1 }}>
-              <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: TXT2, fontSize: 13 }}>R$</span>
-              <input value={inp} onChange={e => setInp(e.target.value)} onKeyDown={e => e.key === "Enter" && handleValor()} placeholder="0,00" autoFocus style={{ width: "100%", background: BG, border: `1px solid ${BORDER}`, borderRadius: 12, padding: "11px 14px 11px 38px", color: TXT, fontSize: 15, outline: "none", boxSizing: "border-box" }} />
-            </div>
-            <button onClick={handleValor} style={{ background: GRAD, color: "#fff", border: "none", borderRadius: 12, padding: "11px 16px", fontWeight: 700, cursor: "pointer" }}>→</button>
-          </div>
-        )}
-        {step === "confirm" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <div style={{ background: BG, border: `1px solid ${SEC}44`, borderRadius: 13, padding: "12px 15px", display: "flex", flexDirection: "column", gap: 7 }}>
-              {confirmRows.map(([k, v]) => (
-                <div key={k} style={{ display: "flex", justifyContent: "space-between" }}>
-                  <span style={{ color: TXT2, fontSize: 12 }}>{k}</span>
-                  <span style={{ color: k === "Valor" ? SEC : TXT, fontSize: 12, fontWeight: k === "Valor" ? 700 : 500 }}>{v}</span>
-                </div>
-              ))}
-            </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={handleConfirm} style={{ flex: 1, background: GRAD, color: "#fff", border: "none", borderRadius: 12, padding: 12, fontWeight: 700, fontSize: 14, cursor: "pointer" }}>✅ Confirmar</button>
-              <button onClick={reset} style={{ background: "transparent", color: PRI, border: `1px solid ${PRI}44`, borderRadius: 12, padding: "12px 14px", cursor: "pointer" }}>✕</button>
-            </div>
-          </div>
-        )}
-        {step === "done" && <button onClick={reset} style={{ background: GRAD, color: "#fff", border: "none", borderRadius: 12, padding: 12, fontWeight: 700, fontSize: 14, cursor: "pointer" }}>💳 Novo Pagamento</button>}
+      {/* Row 1: Nome + Valor */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 140px", gap: 10 }}>
+        <div>
+          <label style={lbl}>Nome do aluno</label>
+          <input ref={nomeRef} value={form.nome} onChange={e => setForm(f => ({ ...f, nome: e.target.value }))} placeholder="Ex: João Silva" autoFocus style={inp} />
+        </div>
+        <div>
+          <label style={lbl}>Valor (R$)</label>
+          <input value={form.valor} onChange={e => setForm(f => ({ ...f, valor: e.target.value }))} placeholder="0,00" style={inp} />
+        </div>
       </div>
-    </div>
+      {/* Row 2: Tipo + Forma */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        <div>
+          <label style={lbl}>Tipo</label>
+          <select value={form.tipo} onChange={e => setForm(f => ({ ...f, tipo: e.target.value }))} style={{ ...inp, cursor: "pointer" }}>
+            {TIPOS.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={lbl}>Forma de pagamento</label>
+          <select value={form.forma} onChange={e => setForm(f => ({ ...f, forma: e.target.value }))} style={{ ...inp, cursor: "pointer" }}>
+            {FORMAS.map(f => <option key={f} value={f}>{f}</option>)}
+          </select>
+        </div>
+      </div>
+      {form.tipo === "Outros" && (
+        <div>
+          <label style={lbl}>Descreva</label>
+          <input value={form.outrosDesc} onChange={e => setForm(f => ({ ...f, outrosDesc: e.target.value }))} placeholder="Ex: Material didático..." style={inp} />
+        </div>
+      )}
+      <button type="submit" style={{ background: GRAD, color: "#fff", border: "none", borderRadius: 12, padding: "11px 0", fontWeight: 700, fontSize: 14, cursor: "pointer", letterSpacing: 0.3 }}>
+        Confirmar Pagamento →
+      </button>
+    </form>
   );
 }
 
 // ── Colab Panel ───────────────────────────────────────────────────────────────
 function ColabPanel({ transacoes }) {
-  const [mes, setMes] = useState("todos");
+  const now = new Date();
+  const mesAtualAbrev = MONTHS[now.getMonth()];
+  const [mes, setMes] = useState(mesAtualAbrev);
+  const [busca, setBusca] = useState("");
+
   const todos = transacoes.filter(t => t.tipo === "Receita");
   const mesesComDados = MONTHS.filter(m => {
     const pad = String(MONTHS.indexOf(m) + 1).padStart(2, "0");
-    return todos.some(t => { const p = String(t.data || "").split("/"); return p.length === 3 ? p[1] === pad : String(t.data || "").toLowerCase().includes(m.toLowerCase()); });
+    return todos.some(t => { const p = String(t.data || "").split("/"); return p.length === 3 && p[1] === pad; });
   });
-  const filtrados = filterByMonth(todos, mes);
-  const total = filtrados.reduce((s, t) => s + t.valor, 0);
+
+  const filtrados = filterByMonth(todos, mes).filter(t =>
+    !busca.trim() || t.descricao?.toLowerCase().includes(busca.toLowerCase())
+  );
+  const total = filtrados.reduce((s, t) => s + Number(t.valor || 0), 0);
+
   return (
-    <div style={{ background: BG2, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+    <div style={{ background: BG2, border: `1px solid ${BORDER}`, borderRadius: 16, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
+      {/* Cabeçalho com filtros */}
       <div style={{ padding: "14px 16px 10px", borderBottom: `1px solid ${BORDER}`, flexShrink: 0 }}>
-        <h3 style={{ fontSize: 14, margin: "0 0 10px", color: TXT }}>Pagamentos Lançados</h3>
-        <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+          <span style={{ fontSize: 14, fontWeight: 700, color: TXT }}>Pagamentos Lançados</span>
+          <span style={{ color: TXT3, fontSize: 12, fontFamily: "monospace" }}>{filtrados.length} registro{filtrados.length !== 1 ? "s" : ""}</span>
+        </div>
+        {/* Filtro meses */}
+        <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 8 }}>
           {["todos", ...mesesComDados].map(m => (
-            <button key={m} onClick={() => setMes(m)} style={{ background: mes === m ? GRAD : BG3, color: mes === m ? "#fff" : TXT2, border: `1px solid ${mes === m ? "transparent" : BORDER}`, borderRadius: 7, padding: "3px 10px", cursor: "pointer", fontSize: 11, fontFamily: "monospace", fontWeight: mes === m ? 700 : 400 }}>
+            <button key={m} onClick={() => setMes(m)} style={{ background: mes === m ? GRAD : BG3, color: mes === m ? "#fff" : TXT2, border: `1px solid ${mes === m ? "transparent" : BORDER}`, borderRadius: 7, padding: "4px 11px", cursor: "pointer", fontSize: 11, fontFamily: "monospace", fontWeight: mes === m ? 700 : 400 }}>
               {m === "todos" ? "Todos" : m}
             </button>
           ))}
         </div>
+        {/* Busca */}
+        <input value={busca} onChange={e => setBusca(e.target.value)} placeholder="🔍 Buscar aluno..." style={{ width: "100%", background: BG, border: `1px solid ${BORDER}`, borderRadius: 8, padding: "7px 11px", color: TXT, fontSize: 12, outline: "none", boxSizing: "border-box" }} />
       </div>
-      <div style={{ flex: 1, overflowY: "auto", padding: "10px 12px", display: "flex", flexDirection: "column", gap: 7 }}>
+      {/* Lista compacta */}
+      <div style={{ flex: 1, overflowY: "auto", padding: "8px 10px", display: "flex", flexDirection: "column", gap: 4 }}>
         {filtrados.length === 0
           ? <div style={{ textAlign: "center", padding: "32px 0", color: TXT3, fontSize: 13 }}>Nenhum pagamento{mes !== "todos" ? ` em ${mes}` : " ainda"}.</div>
           : filtrados.map((t, i) => (
-            <div key={i} style={{ background: BG, border: `1px solid ${BORDER}`, borderRadius: 11, padding: "10px 13px" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ color: TXT, fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.descricao}</div>
-                  <div style={{ display: "flex", gap: 6, marginTop: 3, flexWrap: "wrap" }}>
-                    <span style={{ background: BG2, borderRadius: 5, padding: "1px 6px", fontSize: 10, color: TXT2 }}>{t.categoria}</span>
-                    {t.forma && <span style={{ color: TXT3, fontSize: 10, fontFamily: "monospace" }}>{t.forma}</span>}
-                    <span style={{ color: TXT3, fontSize: 10, fontFamily: "monospace" }}>{t.data}</span>
-                  </div>
+            <div key={i} style={{ background: BG, border: `1px solid ${BORDER}44`, borderRadius: 9, padding: "8px 12px", display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ color: TXT, fontSize: 12, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.descricao}</div>
+                <div style={{ color: TXT3, fontSize: 10, fontFamily: "monospace", marginTop: 2 }}>
+                  {t.categoria} · {t.forma} · {t.data}
                 </div>
-                <span style={{ color: SEC, fontFamily: "monospace", fontSize: 13, fontWeight: 700, marginLeft: 8, flexShrink: 0 }}>+{fmt(t.valor)}</span>
               </div>
+              <span style={{ color: SEC, fontFamily: "monospace", fontSize: 13, fontWeight: 700, flexShrink: 0 }}>+{fmt(t.valor)}</span>
             </div>
           ))
         }
       </div>
+      {/* Rodapé total */}
       {filtrados.length > 0 && (
-        <div style={{ padding: "12px 16px", borderTop: `1px solid ${BORDER}`, background: `${SEC}0a`, flexShrink: 0, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span style={{ color: TXT2, fontSize: 12 }}>{mes === "todos" ? "Total geral" : `Total — ${mes}`} <span style={{ color: TXT3 }}>({filtrados.length})</span></span>
+        <div style={{ padding: "10px 16px", borderTop: `1px solid ${BORDER}`, background: `${SEC}0a`, flexShrink: 0, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span style={{ color: TXT2, fontSize: 12 }}>{mes === "todos" ? "Total geral" : `Total — ${mes}`}</span>
           <span style={{ color: SEC, fontFamily: "monospace", fontSize: 15, fontWeight: 700 }}>{fmt(total)}</span>
         </div>
       )}
@@ -620,10 +604,8 @@ function ColaboradorView({ data, setData, onBack }) {
         </div>
         <button onClick={onBack} style={{ background: "transparent", color: TXT2, border: `1px solid ${BORDER}`, borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontSize: 13 }}>← Sair</button>
       </div>
-      <div style={{ flex: 1, display: "grid", gridTemplateColumns: "1fr 340px", overflow: "hidden" }}>
-        <div style={{ borderRight: `1px solid ${BORDER}`, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-          <GuidedPayment data={data} setData={setData} />
-        </div>
+      <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px", display: "flex", flexDirection: "column", gap: 16, maxWidth: 900, margin: "0 auto", width: "100%", boxSizing: "border-box" }}>
+        <GuidedPayment data={data} setData={setData} />
         <ColabPanel transacoes={data.transacoes} />
       </div>
     </div>
@@ -988,10 +970,8 @@ function ColaboradorView({ data, setData, onBack }) {
         </div>
         <button onClick={onBack} style={{ background: "transparent", color: TXT2, border: `1px solid ${BORDER}`, borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontSize: 13 }}>← Sair</button>
       </div>
-      <div style={{ flex: 1, display: "grid", gridTemplateColumns: "1fr 340px", overflow: "hidden" }}>
-        <div style={{ borderRight: `1px solid ${BORDER}`, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-          <GuidedPayment data={data} setData={setData} />
-        </div>
+      <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px", display: "flex", flexDirection: "column", gap: 16, maxWidth: 900, margin: "0 auto", width: "100%", boxSizing: "border-box" }}>
+        <GuidedPayment data={data} setData={setData} />
         <ColabPanel transacoes={data.transacoes} />
       </div>
     </div>
